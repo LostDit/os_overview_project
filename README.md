@@ -45,7 +45,6 @@
 
 ## Тестирование
 * Google Test (gtest) / Catch2
-* Boost.Test
 
 ## Упаковка и развёртывание
 * Linux-паки (.deb) CPack с генератором DEB: настройка CPACK_DEBIAN_PACKAGE_DEPENDS, скрипты preinst, postinst, unit-файл systemd.
