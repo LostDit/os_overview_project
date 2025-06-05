@@ -49,6 +49,55 @@ void ClientManager::downloadFile(const QString& remotePath, const QString& local
     // и сохранит в файл, затем вызовет fileDownloadFinished
 }
 
+void ClientManager::setFilePermissions(const QString& filePath, const QString& permissions) {
+    QJsonObject request;
+    request["method"] = "setFilePermissions";
+    QJsonObject params;
+    params["filePath"] = filePath;
+    params["permissions"] = permissions;
+    request["params"] = params;
+    sendJson(request, "setFilePermissions");
+}
+
+void ClientManager::manageService(const QString& serviceName, const QString& action) {
+    QJsonObject request;
+    request["method"] = "manageService";
+    QJsonObject params;
+    params["serviceName"] = serviceName;
+    params["action"] = action; // "start", "stop", "restart" и т.д.
+    request["params"] = params;
+    sendJson(request, "manageService");
+}
+
+void ClientManager::removeUser(const QString& username) {
+    QJsonObject request;
+    request["method"] = "removeUser";
+    QJsonObject params;
+    params["username"] = username;
+    request["params"] = params;
+    sendJson(request, "removeUser");
+}
+
+void ClientManager::addUser(const QString& username, const QString& password) {
+    QJsonObject request;
+    request["method"] = "addUser";
+    QJsonObject params;
+    params["username"] = username;
+    params["password"] = password;
+    request["params"] = params;
+    sendJson(request, "addUser");
+}
+
+void ClientManager::changeUserPassword(const QString& username, const QString& newPassword) {
+    QJsonObject request;
+    request["method"] = "changeUserPassword";
+    QJsonObject params;
+    params["username"] = username;
+    params["newPassword"] = newPassword;
+    request["params"] = params;
+    sendJson(request, "changeUserPassword");
+}
+
 void ClientManager::connectToServer(const QString& host, quint16 port) {
     socket->connectToHost(host, port);
 }
