@@ -1,0 +1,13 @@
+Source: os-overview
+Section: utils
+Priority: optional
+Maintainer: Your Name <your.email@example.com>
+Build-Depends: debhelper (>=9), qt5-default, qtbase5-dev
+Standards-Version: 4.5.0
+Homepage: https://example.com
+
+Package: os-overview
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: OS Overview Server
+ Server part for system monitoring and management.

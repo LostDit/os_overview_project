@@ -1,0 +1,13 @@
+[Unit]
+Description=OS Overview Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/os_overview
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
