@@ -31,6 +31,8 @@
 
 ## Тестирование
 * Google Test (gtest) / catch2
+=======
+* Google Test (gtest) / Catch2
 
 ## Упаковка и развёртывание
 * Linux-паки (.deb) CPack с генератором DEB: настройка CPACK_DEBIAN_PACKAGE_DEPENDS, скрипты preinst, postinst, unit-файл systemd.
