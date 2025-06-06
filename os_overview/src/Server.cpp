@@ -1,34 +1,16 @@
 #include "server.h"
-#include "usermanager.h"
 #include <QTcpSocket>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QMap>
 #include <QDataStream>
+#include <QFile>
 #include <QDebug>
 
-// --------------------------------------------------------------------------------
-// TODO: предполагается, что в server.h уже объявлен класс Server : public QTcpServer
-// и есть поля:
-//    NetworkDiscovery discovery;
-//    FileManager fileManager;
-//    UserManager userManager;
-//    ServiceManager serviceManager;
-//    SystemInfo systemInfo;
-//    QMap<QTcpSocket*, QByteArray> clientBuffers;
-//    QMap<QTcpSocket*, quint32>    clientBlockSizes;
-// --------------------------------------------------------------------------------
-
-Server::Server(QObject* parent) : QTcpServer(parent) {}
-
-void Server::startDiscovery(quint16 discoveryPort, quint16 tcpPort) {
-    discovery.start(discoveryPort, tcpPort);
+Server::Server(QObject* parent) : QTcpServer(parent) {
 }
 
-Server::~Server() {
-    // Все динамические объекты удаляются автоматически по иерархии QObject.
-}
+Server::~Server() {}
 
 bool Server::start(quint16 port) {
     if (!listen(QHostAddress::Any, port)) {
@@ -39,6 +21,10 @@ bool Server::start(quint16 port) {
     return true;
 }
 
+void Server::startDiscovery(quint16 discoveryPort, quint16 tcpPort) {
+    discovery.start(discoveryPort, tcpPort);
+}
+
 void Server::incomingConnection(qintptr socketDescriptor) {
     QTcpSocket* client = new QTcpSocket(this);
     if (!client->setSocketDescriptor(socketDescriptor)) {
@@ -47,7 +33,6 @@ void Server::incomingConnection(qintptr socketDescriptor) {
         return;
     }
 
-    // Инициализируем буфер и blockSize для этого клиента
     clientBuffers[client] = QByteArray();
     clientBlockSizes[client] = 0;
 
@@ -57,7 +42,6 @@ void Server::incomingConnection(qintptr socketDescriptor) {
     qInfo() << "New client connected from" << client->peerAddress().toString();
 }
 
-// Слот при отключении клиента: очищаем все связанные данные
 void Server::handleClientDisconnected() {
     QTcpSocket* client = qobject_cast<QTcpSocket*>(sender());
     if (!client) return;
@@ -68,7 +52,6 @@ void Server::handleClientDisconnected() {
     qInfo() << "Client disconnected";
 }
 
-// Слот для чтения данных от клиента (хранится в клиентских буферах)
 void Server::onClientReadyRead() {
     QTcpSocket* client = qobject_cast<QTcpSocket*>(sender());
     if (!client) return;
@@ -80,137 +63,104 @@ void Server::onClientReadyRead() {
     quint32 &blockSize = clientBlockSizes[client];
     QByteArray &buffer = clientBuffers[client];
 
-    // 1) Если еще не знаем размер следующего JSON-пакета, читаем 4-байтовый заголовок
     if (blockSize == 0) {
-        if (client->bytesAvailable() < static_cast<int>(sizeof(quint32)))
-            return; // ждем пока придет хотя бы 4 байта
+        if (client->bytesAvailable() < static_cast<int>(sizeof(quint32))) return;
         in >> blockSize;
     }
-    // 2) Ждем, пока накопится весь payload
-    if (client->bytesAvailable() < static_cast<int>(blockSize))
-        return; // еще не весь «payload»
+    if (client->bytesAvailable() < static_cast<int>(blockSize)) return;
 
-    // 3) Читаем ровно blockSize байт
     QByteArray data;
     data.resize(blockSize);
     in.readRawData(data.data(), blockSize);
-    blockSize = 0; // сбрасываем для следующего пакета
+    blockSize = 0;
 
-    // 4) Парсим JSON
     QJsonParseError parseError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
         qWarning() << "JSON parse error:" << parseError.errorString();
         return;
     }
-    if (!doc.isObject()) {
-        qWarning() << "Invalid JSON-RPC: not an object";
-        return;
-    }
+    if (!doc.isObject()) return;
 
     QJsonObject request = doc.object();
+    QString method = request["method"].toString();
+    int id = request["id"].toInt(-1);
 
-    // 5) Извлекаем «method» и «id»
-    QString method = request.value("method").toString();
-    int id = request.value("id").toInt(-1);
     QJsonObject response;
-    if (id >= 0) {
-        response["id"] = id;
-    }
+    if (id >= 0) response["id"] = id;
 
-    // 6) Обрабатываем метод
     if (method == "getUserList") {
-        QJsonArray arr = userManager.getUserListAsJsonArray();
-        response["result"] = arr;
+        response["result"] = userManager.getUserListAsJsonArray();
     }
     else if (method == "getSystemInfo") {
-        QJsonObject info = systemInfo.collectSystemInfo();
-        response["result"] = info;
+        response["result"] = systemInfo.collectSystemInfo();
     }
     else if (method == "getFileSystem") {
-        QString path = request.value("params").toObject().value("path").toString();
-        QJsonArray arr = fileManager.getFileSystemInfo(path);
-        response["result"] = arr;
+        response["result"] = fileManager.getFileSystemInfo(request["params"].toObject()["path"].toString());
     }
     else if (method == "getProcessList") {
-        QJsonArray arr = processManager.getProcessListAsJsonArray();
-        response["result"] = arr;
+        response["result"] = processManager.getProcessListAsJsonArray();
     }
     else if (method == "getServiceList") {
-        QJsonArray arr = serviceManager.getServices();
-        response["result"] = arr;
+        response["result"] = serviceManager.getServices();
     }
     else if (method == "addUser") {
-        QString username = request.value("params").toObject().value("username").toString();
-        QString password = request.value("params").toObject().value("password").toString();
-        bool ok = userManager.addUser(username, password);
-        if (ok) response["result"] = QJsonObject{ {"status", "success"} };
-        else {
-            QJsonObject err;
-            err["code"] = -32001;
-            err["message"] = "Failed to add user";
-            response["error"] = err;
-        }
+        auto p = request["params"].toObject();
+        bool ok = userManager.addUser(p["username"].toString(), p["password"].toString());
+        response[ok ? "result" : "error"] = ok ? QJsonObject{{"status", "success"}} : QJsonObject{{"code", -32001}, {"message", "Failed to add user"}};
     }
     else if (method == "removeUser") {
-        QString username = request.value("params").toObject().value("username").toString();
-        bool ok = userManager.removeUser(username);
-        if (ok) response["result"] = QJsonObject{ {"status", "success"} };
-        else {
-            QJsonObject err;
-            err["code"] = -32002;
-            err["message"] = "Failed to remove user";
-            response["error"] = err;
-        }
+        auto p = request["params"].toObject();
+        bool ok = userManager.removeUser(p["username"].toString());
+        response[ok ? "result" : "error"] = ok ? QJsonObject{{"status", "success"}} : QJsonObject{{"code", -32002}, {"message", "Failed to remove user"}};
     }
     else if (method == "changeUserPassword") {
-        QString username = request.value("params").toObject().value("username").toString();
-        QString password = request.value("params").toObject().value("password").toString();
-        bool ok = userManager.changePassword(username, password);
-        if (ok) response["result"] = QJsonObject{ {"status", "success"} };
-        else {
-            QJsonObject err;
-            err["code"] = -32003;
-            err["message"] = "Failed to change password";
-            response["error"] = err;
-        }
+        auto p = request["params"].toObject();
+        bool ok = userManager.changePassword(p["username"].toString(), p["newPassword"].toString());
+        response[ok ? "result" : "error"] = ok ? QJsonObject{{"status", "success"}} : QJsonObject{{"code", -32003}, {"message", "Failed to change password"}};
     }
     else if (method == "setFilePermissions") {
-        QString path = request.value("params").toObject().value("path").toString();
-        QString perms = request.value("params").toObject().value("permissions").toString();
-        bool ok = fileManager.setPermissions(path, perms);
-        if (ok) response["result"] = QJsonObject{ {"status", "success"} };
-        else {
-            QJsonObject err;
-            err["code"] = -32004;
-            err["message"] = "Failed to set permissions";
-            response["error"] = err;
-        }
+        auto p = request["params"].toObject();
+        bool ok = fileManager.setPermissions(p["filePath"].toString(), p["permissions"].toString());
+        response[ok ? "result" : "error"] = ok ? QJsonObject{{"status", "success"}} : QJsonObject{{"code", -32004}, {"message", "Failed to set permissions"}};
     }
     else if (method == "manageService") {
-        QString service = request.value("params").toObject().value("service").toString();
-        QString action  = request.value("params").toObject().value("action").toString();
-        bool ok = serviceManager.manageService(service, action);
-        if (ok) response["result"] = QJsonObject{ {"status", "success"} };
-        else {
-            QJsonObject err;
-            err["code"] = -32005;
-            err["message"] = "Failed to manage service";
-            response["error"] = err;
+        auto p = request["params"].toObject();
+        bool ok = serviceManager.manageService(p["serviceName"].toString(), p["action"].toString());
+        response[ok ? "result" : "error"] = ok ? QJsonObject{{"status", "success"}} : QJsonObject{{"code", -32005}, {"message", "Failed to manage service"}};
+    }
+    else if (method == "uploadFile") {
+        auto p = request["params"].toObject();
+        QFile file(p["remotePath"].toString());
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(QByteArray::fromBase64(p["data"].toString().toUtf8()));
+            file.close();
+            response["result"] = QJsonObject{{"status", "success"}};
+        } else {
+            response["error"] = QJsonObject{{"code", -32006}, {"message", "Failed to write file"}};
+        }
+    }
+    else if (method == "downloadFile") {
+        auto p = request["params"].toObject();
+        QFile file(p["remotePath"].toString());
+        if (file.open(QIODevice::ReadOnly)) {
+            QByteArray data = file.readAll();
+            file.close();
+            response["result"] = QJsonObject{
+                {"savePath", p["savePath"].toString()},
+                {"data", QString::fromUtf8(data.toBase64())}
+            };
+        } else {
+            response["error"] = QJsonObject{{"code", -32007}, {"message", "Failed to read file"}};
         }
     }
     else {
-        QJsonObject err;
-        err["code"] = -32601; // Method not found
-        err["message"] = "Unknown method: " + method;
-        response["error"] = err;
+        response["error"] = QJsonObject{{"code", -32601}, {"message", "Unknown method"}};
     }
 
-    // 7) Отправляем ответ (через length-prefix + JSON)
     sendJsonResponse(client, response);
 }
 
-// Форматировка ответа: 4-байта (BigEndian) длина + JSON-пayload
 void Server::sendJsonResponse(QTcpSocket* client, const QJsonObject& response) {
     QJsonDocument doc(response);
     QByteArray payload = doc.toJson(QJsonDocument::Compact);

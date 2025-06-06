@@ -27,6 +27,9 @@ private slots:
 
 private:
     void sendJsonResponse(QTcpSocket* client, const QJsonObject& response);
+    void handleUploadFile(QTcpSocket* client, const QJsonObject& params, int id);
+    void handleDownloadFile(QTcpSocket* client, const QJsonObject& params, int id);
+
 
     NetworkDiscovery discovery;
     FileManager fileManager;

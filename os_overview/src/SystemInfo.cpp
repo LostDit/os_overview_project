@@ -5,12 +5,11 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QDateTime>
+#include <QDir>
 
-// Конструктор/деструктор без изменений
 SystemInfo::SystemInfo(QObject* parent) : QObject(parent) { }
 SystemInfo::~SystemInfo() { }
 
-// Собираем JSON-объект со всеми данными
 QJsonObject SystemInfo::collectSystemInfo() const {
     QJsonObject info;
 
@@ -18,10 +17,12 @@ QJsonObject SystemInfo::collectSystemInfo() const {
     info["cpu_model"]     = getCpuInfo();
     info["cpu_cores"]     = getCpuCores();
     info["cpu_load"]      = getCpuLoad();
+    info["cpu_load_per_core"] = getCpuLoadPerCore();
     info["memory"]        = getMemoryInfo();
     info["disks"]         = getDiskInfo();
     info["temperature"]   = getTemperatureInfo();
     info["uptime"]        = getUptime();
+    info["peripherals"]   = getPeripheralDevices();
     info["timestamp"]     = QDateTime::currentDateTime().toString(Qt::ISODate);
 
     return info;
@@ -89,6 +90,37 @@ QJsonObject SystemInfo::getCpuLoad() const {
     return cpuLoad;
 }
 
+QJsonArray SystemInfo::getCpuLoadPerCore() const {
+    QJsonArray loads;
+    QFile file("/proc/stat");
+    if (!file.open(QIODevice::ReadOnly)) return loads;
+    QTextStream in(&file);
+    double maxFreq = 0.0; // Макс. частота (примерно)
+    QFile cpuFreq("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+    if (cpuFreq.open(QIODevice::ReadOnly)) {
+        maxFreq = cpuFreq.readAll().trimmed().toDouble() / 1000000.0; // в GHz
+    } else {
+        maxFreq = 5.0; // Значение по умолчанию, если не удалось получить
+    }
+
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        if (line.startsWith("cpu") && line[3].isDigit()) { // cpu0, cpu1, etc.
+            QStringList values = line.split(' ', Qt::SkipEmptyParts);
+            if (values.size() < 5) continue;
+            qint64 user = values[1].toLongLong();
+            qint64 nice = values[2].toLongLong();
+            qint64 system = values[3].toLongLong();
+            qint64 idle = values[4].toLongLong();
+            qint64 total = user + nice + system + idle;
+            double usagePercent = (total > 0) ? (100.0 * (user + nice + system) / total) : 0.0;
+            double currentFreq = (usagePercent / 100.0) * maxFreq; // Примерное вычисление текущей частоты
+            loads.append(QString("%1GHz/%2GHz").arg(currentFreq, 0, 'f', 1).arg(maxFreq, 0, 'f', 1));
+        }
+    }
+    return loads;
+}
+
 double SystemInfo::getCpuTemperature() const {
     QFile file("/sys/class/thermal/thermal_zone0/temp");
     if (!file.open(QIODevice::ReadOnly)) return 0.0;
@@ -119,6 +151,7 @@ QJsonObject SystemInfo::getMemoryInfo() const {
     memory["total_mb"]     = total / 1024;
     memory["used_mb"]      = (total - free) / 1024;
     memory["available_mb"] = available / 1024;
+    memory["usage"]        = QString("%1MB/%2MB").arg((total - free) / 1024).arg(total / 1024);
     memory["usage_percent"]= (total > 0) ? (100.0 * (total - free) / total) : 0.0;
     return memory;
 }
@@ -132,7 +165,6 @@ QJsonArray SystemInfo::getDiskInfo() const {
     QString output = process.readAllStandardOutput();
     QStringList lines = output.split('\n', Qt::SkipEmptyParts);
 
-    // Пропускаем первую строку (заголовок)
     for (int i = 1; i < lines.size(); ++i) {
         QStringList parts = lines[i].split(' ', Qt::SkipEmptyParts);
         if (parts.size() < 5) continue;
@@ -162,8 +194,41 @@ QJsonObject SystemInfo::getTemperatureInfo() const {
     QJsonObject temps;
     double cpuTemp = getCpuTemperature();
     if (cpuTemp > 0.0) temps["cpu"] = cpuTemp;
-    else             temps["cpu"] = QString("N/A");
-    // HDD/QDisk можно добавить по аналогии, здесь просто «заглушка»
-    temps["hdd"] = QString("N/A");
+    else               temps["cpu"] = QString("N/A");
+
+    double hddTemp = getHddTemperature();
+    if (hddTemp > 0.0) temps["hdd"] = hddTemp;
+    else               temps["hdd"] = QString("N/A");
+
     return temps;
+}
+
+double SystemInfo::getHddTemperature() const {
+    QDir dir("/sys/class/scsi_disk/");
+    QStringList devices = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString& device : devices) {
+        QFile file(QString("/sys/class/scsi_disk/%1/device/enclosure/device:0:0/temperature").arg(device));
+        if (file.open(QIODevice::ReadOnly)) {
+            QString tempStr = file.readAll().trimmed();
+            bool ok;
+            double temp = tempStr.toDouble(&ok);
+            if (ok) return temp;
+        }
+    }
+    return 0.0; // N/A в случае ошибки
+}
+
+QJsonArray SystemInfo::getPeripheralDevices() const {
+    QJsonArray devices;
+    QProcess process;
+    process.start("lsusb");
+    process.waitForFinished();
+    QString output = process.readAllStandardOutput();
+    QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        QJsonObject device;
+        device["description"] = line;
+        devices.append(device);
+    }
+    return devices;
 }

@@ -19,11 +19,15 @@ private:
     QString getCpuInfo() const;
     int getCpuCores() const;
     QJsonObject getCpuLoad() const;
+    QJsonArray getCpuLoadPerCore() const;
     double getCpuTemperature() const;
+    double getHddTemperature() const;
     QJsonObject getMemoryInfo() const;
     QJsonArray getDiskInfo() const;
     QString getUptime() const;
     QJsonObject getTemperatureInfo() const;
+    QJsonArray getPeripheralDevices() const;
+    QJsonObject getNetworkInfo() const;
 };
 
 #endif // SYSTEMINFO_H

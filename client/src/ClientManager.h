@@ -38,8 +38,8 @@ signals:
     void processListReceived(const QJsonArray& processes);
     void operationFinished(const QString& methodName, const QJsonObject& result);
 
-    void fileUploadFinished(bool success, const QString& message);
     void fileDownloadFinished(bool success, const QString& message);
+    void fileUploadFinished(bool success, const QString& message);
 
 private slots:
     void onConnected();

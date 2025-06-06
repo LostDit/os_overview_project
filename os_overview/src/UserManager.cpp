@@ -7,7 +7,6 @@ UserManager::~UserManager() {}
 QJsonArray UserManager::getUserListAsJsonArray() const {
     QJsonArray array;
     QProcess process;
-    // Предположим, что /etc/passwd: имена пользователей — первые поля
     process.start("cut", { "-d:", "-f1", "/etc/passwd" });
     process.waitForFinished();
     QString output = process.readAllStandardOutput();
@@ -24,9 +23,9 @@ bool UserManager::addUser(const QString& username, const QString& password) {
     process.waitForFinished();
     if (process.exitCode() != 0) return false;
 
-    // Устанавливаем пароль: «passwd» считывает из stdin два раза пароль
-    process.start("passwd", { username });
-    process.write(password.toUtf8() + "\n" + password.toUtf8() + "\n");
+    process.start("chpasswd");
+    process.write(QString("%1:%2").arg(username, password).toUtf8());
+    process.closeWriteChannel();
     process.waitForFinished();
     return process.exitCode() == 0;
 }
@@ -40,8 +39,9 @@ bool UserManager::removeUser(const QString& username) {
 
 bool UserManager::changePassword(const QString& username, const QString& password) {
     QProcess process;
-    process.start("passwd", { username });
-    process.write(password.toUtf8() + "\n" + password.toUtf8() + "\n");
+    process.start("chpasswd");
+    process.write(QString("%1:%2").arg(username, password).toUtf8());
+    process.closeWriteChannel();
     process.waitForFinished();
     return process.exitCode() == 0;
 }

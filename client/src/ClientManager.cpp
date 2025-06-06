@@ -1,3 +1,4 @@
+// Файл: ClientManager.cpp (обновлённый, исправленный)
 #include "ClientManager.h"
 #include <QFile>
 #include <QFileInfo>
@@ -45,15 +46,13 @@ void ClientManager::downloadFile(const QString& remotePath, const QString& local
     params["savePath"] = localPath;
     request["params"] = params;
     sendJson(request, "downloadFile");
-    // Здесь сервер должен отправить ответ с base64, который клиент расшифрует в onReadyRead
-    // и сохранит в файл, затем вызовет fileDownloadFinished
 }
 
 void ClientManager::setFilePermissions(const QString& filePath, const QString& permissions) {
     QJsonObject request;
     request["method"] = "setFilePermissions";
     QJsonObject params;
-    params["filePath"] = filePath;
+    params["path"] = filePath;
     params["permissions"] = permissions;
     request["params"] = params;
     sendJson(request, "setFilePermissions");
@@ -63,8 +62,8 @@ void ClientManager::manageService(const QString& serviceName, const QString& act
     QJsonObject request;
     request["method"] = "manageService";
     QJsonObject params;
-    params["serviceName"] = serviceName;
-    params["action"] = action; // "start", "stop", "restart" и т.д.
+    params["service"] = serviceName;
+    params["action"] = action;
     request["params"] = params;
     sendJson(request, "manageService");
 }
@@ -93,7 +92,7 @@ void ClientManager::changeUserPassword(const QString& username, const QString& n
     request["method"] = "changeUserPassword";
     QJsonObject params;
     params["username"] = username;
-    params["newPassword"] = newPassword;
+    params["password"] = newPassword;
     request["params"] = params;
     sendJson(request, "changeUserPassword");
 }
@@ -116,7 +115,6 @@ void ClientManager::sendJson(const QJsonObject& baseObj, const QString& methodNa
         qWarning() << "Trying to send data while not connected";
         return;
     }
-    // 1) делаем копию JSON
     QJsonObject obj = baseObj;
     int id = nextId++;
     obj["id"] = id;
@@ -160,21 +158,16 @@ void ClientManager::requestProcessList() {
     sendJson(request, "getProcessList");
 }
 
-// И т. д. для остальных методов: addUser, removeUser, changeUserPassword, setFilePermissions, manageService
-
 void ClientManager::onReadyRead() {
     QDataStream in(socket);
     in.setVersion(QDataStream::Qt_5_14);
     in.setByteOrder(QDataStream::BigEndian);
 
-    // аналогично: ждём 4 байта, чтобы прочитать blockSize
     if (blockSize == 0) {
-        if (socket->bytesAvailable() < static_cast<int>(sizeof(quint32)))
-            return;
+        if (socket->bytesAvailable() < static_cast<int>(sizeof(quint32))) return;
         in >> blockSize;
     }
-    if (socket->bytesAvailable() < blockSize)
-        return;
+    if (socket->bytesAvailable() < blockSize) return;
 
     QByteArray data;
     data.resize(blockSize);
@@ -189,7 +182,6 @@ void ClientManager::onReadyRead() {
     }
 
     QJsonObject response = doc.object();
-    // Ищем id ответа
     if (!response.contains("id")) {
         qWarning() << "JSON-RPC response without id";
         return;
@@ -199,40 +191,44 @@ void ClientManager::onReadyRead() {
         qWarning() << "Unknown id in response:" << id;
         return;
     }
-    QString method = pendingRequests.take(id); // достаём и стираем
-    // Теперь смотрим, есть ли "error"
+    QString method = pendingRequests.take(id);
     if (response.contains("error")) {
         QJsonObject err = response["error"].toObject();
         qWarning() << "Server returned error for" << method << ":" << err["message"].toString();
         return;
     }
-    // Идём в "result"
     if (!response.contains("result")) {
         qWarning() << "Response for" << method << "has no result";
         return;
     }
 
-    // Смотрим, какой это метод:
     if (method == "getUserList") {
         QJsonArray array = response["result"].toArray();
         QStringList list;
-        for (const auto& val : array) {
-            list << val.toString();
-        }
+        for (const auto& val : array) list << val.toString();
         emit userListReceived(list);
-    }
-    else if (method == "getSystemInfo") {
+    } else if (method == "getSystemInfo") {
         emit systemInfoReceived(response["result"].toObject());
-    }
-    else if (method == "getFileSystem") {
+    } else if (method == "getFileSystem") {
         emit fileSystemReceived(response["result"].toArray());
-    }
-    else if (method == "getProcessList") {
+    } else if (method == "getProcessList") {
         emit processListReceived(response["result"].toArray());
-    }
-    else {
-        // Любой другой метод (addUser, removeUser, setFilePermissions, manageService)
-        // Например, просто эмитим, что этот метод отработал и бросаем результат (или пустой):
+    } else if (method == "downloadFile") {
+        QJsonObject result = response["result"].toObject();
+        QString savePath = result["savePath"].toString();
+        QByteArray fileData = QByteArray::fromBase64(result["data"].toString().toUtf8());
+
+        QFile file(savePath);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(fileData);
+            file.close();
+            emit fileDownloadFinished(true, "Download completed");
+        } else {
+            qWarning() << "Failed to save file to" << savePath;
+        }
+    } else if (method == "uploadFile") {
+        emit fileUploadFinished(true, "Upload completed");
+    } else {
         emit operationFinished(method, response["result"].toObject());
     }
 }

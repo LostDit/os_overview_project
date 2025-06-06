@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDateTime>
+#include <QProcess>
 
 // Конструктор/деструктор остаются без изменений
 FileManager::FileManager(QObject *parent) : QObject(parent) { }
@@ -54,11 +55,10 @@ QJsonObject FileManager::fileInfoToJson(const QFileInfo &info) const {
     return file;
 }
 
-// Пример реализации метода setPermissions (можно использовать chmod)
 bool FileManager::setPermissions(const QString &path, const QString &perms) {
-    // Например, perms = "755" → нужно вызвать chmod 0755 path
-    bool ok = false;
-    uint mode = perms.toUInt(&ok, 8);
-    if (!ok) return false;
-    return QFile::setPermissions(path, QFile::Permissions(mode));
+    // Заменить на поддержку ACL (setfacl)
+    QProcess process;
+    process.start("setfacl", {"-m", perms, path});
+    process.waitForFinished();
+    return (process.exitCode() == 0);
 }
