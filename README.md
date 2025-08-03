@@ -1,43 +1,24 @@
-## Примерно намечу стек технологий которые будут нужны при работе
+## Более кратко про стек:
+* Язык: C++17 (gcc/Clang для Linux, MSVC/MinGW для Windows).
 
-## Языки и компиляторы
-* С++ от 17 стандарта и gcc/clang 
-## Системы сборки и управления зависимостями
-* CMake (По базе)
-* CPack (часть CMake) - нужно более детально разобраться
-* Git (По базе для управления)
+* Сборка: CMake + CPack (DEB, NSIS/WiX).
 
-## Сетевое взаимодействие
-* Есть в составе QT
+* Сетевое взаимодействие: Boost.Asio (или POSIX/WinSock).
 
-## Сериалиазиция и протокол обмена
-* Тупо иметь общий заголовочник на обе тулы и передавать нужные структуры в бинарном виде
+* JSON: nlohmann/json.
 
-## Работа с пользователями и группами
-* Самое простое вызывать из кода утилиту под линуксом
-## Работа с файловой системой и ACL - (Полностью нужно будет чекать блок)
-* C++17 std::filesystem опять же вызовы в консоль
-## Управление демонами и службами
-* Linux вызовы в консоль systemd
+* ACL-функции: libacl (Linux), WinAPI (Windows).
 
-## Сбор информации о «железе» и ресурсах
-* Linux - procfs, sysfs
+* Управление пользователями/группами: glibc (getpwent, getgrent) + утилиты (useradd, groupadd) на Linux; NetUser API / WMI на Windows.
 
-## Графический интерфейс (GUI)
-* Qt5 - (По базе)
+* Мониторинг ресурсов: procfs/sysfs + lm-sensors + smartmontools на Linux; WMI / PDH / Performance Counters на Windows.
 
-## Логирование
-* spdlog - как в ентернете написана более легкая и быстрая или встроенное логирование в QT
+* Управление демонами/службами: systemd (Linux), SCM (WinAPI) + PowerShell (Windows).
 
-## Тестирование
-* Google Test (gtest) / catch2
-=======
-* Google Test (gtest) / Catch2
+* GUI: Qt5/Qt6.
 
-## Упаковка и развёртывание
-* Linux-паки (.deb) CPack с генератором DEB: настройка CPACK_DEBIAN_PACKAGE_DEPENDS, скрипты preinst, postinst, unit-файл systemd.
-* Windows-инсталляторы (NSIS или WiX) Сценарии для установки/удаления: копирование исполняемых файлов, необходимых DLL (Boost, Qt)
+* Логирование: spdlog (или Boost.Log).
 
-## Дополнительные утилиты и инструменты
-* WiX Toolset (Windows-MSI) или NSIS
-* Make / cmake / Ninja
+* Тестирование: Google Test / Catch2 (модульные тесты).
+
+* Упаковка: DEB (Linux), NSIS/WiX (Windows).
